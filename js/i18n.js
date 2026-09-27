@@ -160,6 +160,17 @@ const STR = {
   chat_with_sample: { ja: 'この模擬患者と対話する', en: 'Chat with this patient', ko: '이 모의환자와 대화하기', zh: '与该模拟患者对话' },
   source_label: { ja: '出典', en: 'Source', ko: '출처', zh: '出处' },
 
+  demo_warn_h: { ja: 'いまはデモモードです。', en: 'You are in Demo mode.', ko: '현재 데모 모드입니다.', zh: '当前为演示模式。' },
+  demo_warn: {
+    ja: '入力した条件は反映されず、固定の出力例が表示されます。新しいコンテンツを作るには、設定でAIを選んでAPIキーを登録してください。',
+    en: 'Your inputs are ignored and a fixed example is shown. To create new content, choose an AI and enter an API key in Settings.',
+    ko: '입력한 조건은 반영되지 않고 고정된 출력 예시가 표시됩니다. 새 콘텐츠를 만들려면 설정에서 AI를 고르고 API 키를 등록하십시오.',
+    zh: '输入的条件不会被采用，只显示固定示例。要生成新内容，请在设置中选择AI并登记API密钥。'
+  },
+  demo_out_h: { ja: 'デモ出力：', en: 'Demo output:', ko: '데모 출력:', zh: '演示输出：' },
+  demo_out: { ja: 'これは固定の出力例で、入力した条件は反映されていません。', en: 'this is a fixed example; your inputs were not used.', ko: '고정된 출력 예시이며 입력한 조건은 반영되지 않았습니다.', zh: '这是固定示例，未采用您输入的条件。' },
+  open_settings: { ja: '設定を開く', en: 'Open Settings', ko: '설정 열기', zh: '打开设置' },
+  auto_provider: { ja: 'APIキーの形式に合わせて「{p}」を使う設定にしました。', en: 'Switched to “{p}” to match your API key.', ko: 'API 키 형식에 맞춰 「{p}」를 사용하도록 설정했습니다.', zh: '已根据API密钥格式切换为“{p}”。' },
   set_h: { ja: '設定', en: 'Settings', ko: '설정', zh: '设置' },
   set_provider: { ja: '使うAI', en: 'AI provider', ko: '사용할 AI', zh: '所用AI' },
   set_model: { ja: 'モデル名', en: 'Model name', ko: '모델명', zh: '模型名称' },

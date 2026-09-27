@@ -76,9 +76,33 @@ async function openai({ model, apiKey, system, messages, json, temperature }) {
 
 // モデルが ```json ... ``` で囲んだ場合なども含めてJSONを取り出す
 export function parseJSONLoose(text) {
-  const t = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
-  try { return JSON.parse(t); } catch (e) { /* fallthrough */ }
-  const s = t.indexOf('{'), e = t.lastIndexOf('}');
-  if (s >= 0 && e > s) return JSON.parse(t.slice(s, e + 1));
+  const body = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+  try { return JSON.parse(body); } catch (e) { /* fallthrough */ }
+  const s = body.indexOf('{'), e = body.lastIndexOf('}');
+  if (s >= 0 && e > s) { try { return JSON.parse(body.slice(s, e + 1)); } catch (err) { /* fallthrough */ } }
   throw new Error(t('err_json'));
+}
+
+// APIキーの形式からプロバイダを推定する
+export function detectProvider(key) {
+  const k = (key || '').trim();
+  if (/^AIza/.test(k)) return 'gemini';
+  if (/^sk-ant-/.test(k)) return 'anthropic';
+  if (/^sk-/.test(k)) return 'openai';
+  return null;
+}
+
+// 実際に使う設定を決める。APIキーが登録されていれば、決してデモにはしない
+export function resolveSettings(s) {
+  const apiKey = (s.apiKey || '').trim();
+  let provider = s.provider;
+  if (apiKey) {
+    const detected = detectProvider(apiKey);
+    if (provider === 'demo') provider = detected || 'gemini';
+    else if (detected && detected !== provider) provider = detected;
+  }
+  let model = (s.model || '').trim();
+  const known = Object.values(PROVIDERS).map(p => p.model);
+  if (provider !== 'demo' && (!model || model === 'demo' || (provider !== s.provider && known.includes(model)))) model = PROVIDERS[provider].model;
+  return { ...s, provider, model, apiKey };
 }

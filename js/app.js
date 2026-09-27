@@ -1,6 +1,6 @@
 import { LANGS, lang, setLang, t, L, SWITCH_INVITE } from './i18n.js';
 import { TYPES, typeText, fieldOptions, extractSystemInstruction } from './templates.js';
-import { PROVIDERS, callLLM, parseJSONLoose } from './providers.js';
+import { PROVIDERS, callLLM, parseJSONLoose, resolveSettings } from './providers.js';
 import { SAMPLES, CREDITS, REFERENCED_ONLY, CONTAMINATION_TESTS, sanitize, creditLine, CC_BY } from './samples.js';
 import { GUIDE, CREDITS_TEXT as CT } from './content.js';
 import { renderMarkdown } from './markdown.js';
@@ -36,6 +36,8 @@ const h = (tag, attrs = {}, ...kids) => {
   return el;
 };
 const toneClass = x => 'tone-' + (x || 'teal');
+const eff = () => resolveSettings(settings);   // 実際に使う設定（APIキーがあればデモにしない）
+const aiLabel = () => { const e = eff(); return e.provider === 'demo' ? t('demo') : e.provider + ' / ' + e.model; };
 const okey = id => `${lang}:${id}`;
 const siteUrl = () => location.origin + location.pathname;
 
@@ -46,7 +48,7 @@ function renderChrome() {
   $('#brand-title').textContent = t('brand_title');
   $('#brand-sub').textContent = t('brand_sub');
   $('#btn-settings-label').textContent = t('settings');
-  $('#provider-badge').textContent = settings.provider === 'demo' ? t('demo') : settings.provider;
+  $('#provider-badge').textContent = eff().provider === 'demo' ? t('demo') : eff().provider;
 
   const sw = $('#lang-switch');
   sw.innerHTML = '';
@@ -236,12 +238,13 @@ function viewType(id) {
   form.append(h('div', { class: 'row' },
     h('button', { class: 'btn primary', type: 'submit', id: 'btn-gen' }, t('btn_generate')),
     h('button', { class: 'btn ghost', type: 'button', onclick: () => showPrompt(ty, form) }, t('btn_show_prompt')),
-    h('span', { class: 'lic' }, t('using_ai', { v: settings.provider === 'demo' ? t('demo') : settings.provider + ' / ' + settings.model }))));
+    h('span', { class: 'lic' }, t('using_ai', { v: aiLabel() }))));
 
   main.append(
     h('div', { class: 'pills' }, h('span', { class: 'pill ' + toneClass(ty.tone) }, t('content_n', { n: ty.no })), h('span', { class: 'pill tone-dark' }, t('cq_badge', { cq: ty.cq, c: tt.certainty }))),
     h('h1', {}, tt.name),
     h('p', { class: 'lead' }, tt.desc),
+    eff().provider === 'demo' ? h('div', { class: 'notice demo-warn', role: 'note' }, h('strong', {}, t('demo_warn_h')), ' ', t('demo_warn'), ' ', h('button', { class: 'btn accent', type: 'button', onclick: () => $('#btn-settings').click() }, t('open_settings'))) : '',
     form,
     h('div', { id: 'status', class: 'status', role: 'status', 'aria-live': 'polite' }),
     h('div', { id: 'out' }),
@@ -280,8 +283,9 @@ async function generate(ty, form) {
   status.textContent = t('generating');
   try {
     const p = ty.build(v);
-    const text = await callLLM({ ...settings, system: p.system, messages: [{ role: 'user', content: p.user }], json: p.json, typeId: ty.id });
-    const meta = { provider: settings.provider, model: settings.provider === 'demo' ? 'demo' : settings.model, date: new Date().toISOString(), lang };
+    const e = eff();
+    const text = await callLLM({ ...e, system: p.system, messages: [{ role: 'user', content: p.user }], json: p.json, typeId: ty.id });
+    const meta = { provider: e.provider, model: e.provider === 'demo' ? 'demo' : e.model, date: new Date().toISOString(), lang, input: v };
     if (ty.id === 'mcq') {
       const items = validateMCQ(parseJSONLoose(text));
       outputs[okey(ty.id)] = { md: mcqToMarkdown(items), items, meta };
@@ -321,9 +325,10 @@ function renderOutput(ty) {
 
   const body = h('div', { class: 'md', html: renderMarkdown(o.md) });
   bindCopy(body);
+  const demoNote = o.meta.provider === 'demo' ? h('div', { class: 'notice demo-warn' }, h('strong', {}, t('demo_out_h')), ' ', t('demo_out')) : '';
   const cl = h('div', { class: 'checklist' }, h('h3', {}, t('checklist_h')),
     t('checks').map(([k, d]) => h('label', {}, h('input', { type: 'checkbox' }), h('span', {}, h('strong', {}, k + ': '), d))));
-  out.append(h('div', { class: 'output' }, tools, body, cl));
+  out.append(h('div', { class: 'output' }, tools, demoNote, body, cl));
 }
 
 function bindCopy(root) {
@@ -383,7 +388,7 @@ function openChatWith(typeId, sys, wrap, heading) {
     input.value = '';
     send.disabled = true;
     try {
-      const reply = await callLLM({ ...settings, system: c.system, messages: c.messages, temperature: 0.7, typeId, mode: 'chat' });
+      const reply = await callLLM({ ...eff(), system: c.system, messages: c.messages, temperature: 0.7, typeId, mode: 'chat' });
       c.messages.push({ role: 'assistant', content: reply });
       add('assistant', reply);
     } catch (e) {
@@ -419,28 +424,41 @@ function initSettings() {
     if (p.keyUrl) el.append(t('key_where'), h('a', { href: p.keyUrl, target: '_blank', rel: 'noopener noreferrer' }, p.keyUrl));
     else el.append(t('key_demo'));
   };
-  sel.addEventListener('change', () => { $('#set-model').value = PROVIDERS[sel.value].model; linkKey(); });
+  const apply = () => {
+    settings.provider = sel.value;
+    settings.model = $('#set-model').value.trim() || PROVIDERS[sel.value].model;
+    settings.apiKey = $('#set-key').value.trim();
+    settings.remember = $('#set-remember').checked;
+    const e = resolveSettings(settings);
+    const msg = $('#set-auto');
+    if (e.provider !== settings.provider) {
+      // APIキーが登録されているのにデモ（または別社）が選ばれていた場合は、キーに合うAIへ切り替える
+      settings.provider = e.provider;
+      settings.model = e.model;
+      sel.value = e.provider;
+      $('#set-model').value = e.model;
+      linkKey();
+      msg.textContent = t('auto_provider', { p: t(PROVIDERS[e.provider].labelKey) });
+    } else msg.textContent = '';
+    store.set('provider', settings.provider);
+    store.set('model', settings.model);
+    store.set('remember', settings.remember);
+    if (settings.remember) store.set('apiKey', settings.apiKey); else store.del('apiKey');
+  };
+  sel.addEventListener('change', () => { $('#set-model').value = PROVIDERS[sel.value].model; linkKey(); apply(); });
+  ['#set-model', '#set-key', '#set-remember'].forEach(id => $(id).addEventListener('change', apply));
   $('#btn-settings').addEventListener('click', () => {
     sel.value = settings.provider;
     $('#set-model').value = settings.model;
     $('#set-key').value = settings.apiKey;
     $('#set-remember').checked = settings.remember;
+    $('#set-auto').textContent = '';
     linkKey();
     dlg.showModal();
   });
-  $('#settings-form').addEventListener('submit', e => {
-    if (e.submitter && e.submitter.value !== 'save') return;
-    settings.provider = sel.value;
-    settings.model = $('#set-model').value.trim() || PROVIDERS[sel.value].model;
-    settings.apiKey = $('#set-key').value.trim();
-    settings.remember = $('#set-remember').checked;
-    store.set('provider', settings.provider);
-    store.set('model', settings.model);
-    store.set('remember', settings.remember);
-    if (settings.remember) store.set('apiKey', settings.apiKey); else store.del('apiKey');
-    renderChrome();
-    route();
-  });
+  // 「保存」「閉じる」「Esc」のどれで閉じても、入力内容を反映する
+  $('#settings-form').addEventListener('submit', () => apply());
+  dlg.addEventListener('close', () => { apply(); renderChrome(); route(); });
 }
 
 // ---------- ルーティング ----------
